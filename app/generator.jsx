@@ -530,10 +530,15 @@ export default function AlbumSheetGenerator() {
     if (useSearch) {
       payload.tools = [{ type: "web_search_20250305", name: "web_search" }];
     }
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+const res = await fetch("/api/sheet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        prompt,
+        maxTokens,
+        useSearch,
+        model: payload.model,
+      }),
     });
 
     const data = await res.json();
