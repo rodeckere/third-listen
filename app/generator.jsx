@@ -732,7 +732,7 @@ const res = await fetch("/api/sheet", {
     }
   }
 
-  async function toggleArtist(name) {
+async function toggleArtist(name, mbid) {
     if (open[name]) {
       setOpen((o) => ({ ...o, [name]: false }));
       return;
@@ -741,16 +741,21 @@ const res = await fetch("/api/sheet", {
     if (discoCache[name] || loadingArtist) return;
     setLoadingArtist(name);
     try {
-      const result = await ask(
-        `${DISCOGRAPHY_PROMPT}\n\nArtist: ${name}`,
-        8000,
-        true,
-        "claude-haiku-4-5-20251001"
-      );
-      setDiscoCache((c) => ({
-        ...c,
-        [name]: { albums: result.albums || [], truncated: !!result._truncated },
-      }));
+      const res = await fetch(`/api/mb-albums?mbid=${mbid}`);
+      const data = await res.json();
+      const albums = (data["release-groups"] || [])
+        .filter(
+          (g) =>
+            g["primary-type"] === "Album" &&
+            (!g["secondary-types"] || g["secondary-types"].length === 0)
+        )
+        .map((g) => ({
+          title: g.title,
+          year: g["first-release-date"] ? g["first-release-date"].slice(0, 4) : "",
+        }))
+        .sort((a, b) => (a.year || "9999").localeCompare(b.year || "9999"));
+
+      setDiscoCache((c) => ({ ...c, [name]: { albums, truncated: false } }));
     } catch (e) {
       setDiscoCache((c) => ({ ...c, [name]: { albums: [], error: e.message } }));
     } finally {
@@ -758,7 +763,7 @@ const res = await fetch("/api/sheet", {
     }
   }
 
-  async function run(override) {
+async function run(override) {
     const value = (typeof override === "string" ? override : query).trim();
     setShowSuggest(false);
     setSuggestions([]);
@@ -770,14 +775,47 @@ const res = await fetch("/api/sheet", {
     setMatches(null);
     setOpen({});
     try {
-      const result = await ask(
-        `${MATCH_PROMPT}\n\nSearch: ${value}`,
-        3000,
-        true,
-        "claude-haiku-4-5-20251001"
-      );
-      const artists = result.artists || [];
-      const albums = result.albums || [];
+      const artistRes = await fetch(
+        `/api/mb?q=${encodeURIComponent(value)}&type=artist`
+      ).then((r) => r.json());
+
+      await new Promise((r) => setTimeout(r, 1100));
+
+      const albumRes = await fetch(
+        `/api/mb?q=${encodeURIComponent(value)}&type=release-group`
+      ).then((r) => r.json());
+
+      const artists = (artistRes.artists || [])
+        .filter((a) => a.score >= 60)
+        .map((a) => ({
+          name: a.name,
+          mbid: a.id,
+          detail: [
+            a.disambiguation,
+            a.country,
+            a["life-span"] && a["life-span"].begin
+              ? a["life-span"].begin.slice(0, 4)
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+
+      const albums = (albumRes["release-groups"] || [])
+        .filter(
+          (g) =>
+            g["primary-type"] === "Album" &&
+            (!g["secondary-types"] || g["secondary-types"].length === 0)
+        )
+        .map((g) => ({
+          album: g.title,
+          artist:
+            g["artist-credit"] && g["artist-credit"][0]
+              ? g["artist-credit"][0].name
+              : "",
+          year: g["first-release-date"] ? g["first-release-date"].slice(0, 4) : "",
+        }));
+
       if (artists.length === 0 && albums.length === 0) {
         setError("Nothing found under that name. Try a different spelling.");
       } else {
@@ -1114,7 +1152,7 @@ const res = await fetch("/api/sheet", {
                 return (
                   <div key={i} style={{ borderBottom: `1px solid ${RULE}` }}>
                     <button
-                      onClick={() => toggleArtist(m.name)}
+                      onClick={() => toggleArtist(m.name, m.mbid)}
                       style={{
                         display: "flex",
                         width: "100%",
