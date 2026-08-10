@@ -35,17 +35,18 @@ Return ONLY valid JSON, compact, no commentary.
 Shape:
 {
   "album": string, "artist": string, "year": string, "genre": string, "producer": string,
-  "signature": string, "note": string, "lyricsBy": string, "musicBy": string,
+ 
   "tracks": [{ "number": number, "title": string }]
 }
 
-signature (album level): one brief line naming what makes the album great. No hedging.
-note: only a genuinely notable fact, else "".
 
-lyricsBy / musicBy: use "excl." or track numbers where credits differ, e.g.
-"Damon Albarn (excl. 8 - Alex James)".
 
-List every track in running order. Nothing else.`;
+
+
+List every track in running order.
+
+
+`;
 
 const PERSONNEL_PROMPT = `You are a music documentarian. Give the personnel for one album.
 
@@ -60,8 +61,9 @@ Return ONLY valid JSON, compact, no commentary.
 
 Shape:
 {
-  "lineup": [{ "name": string, "roles": [string] }],
-"tracks": [{ "number": number, "title": string, "except": [{ "name": string, "roles": [string] }] }]}
+
+"lineup": [{ "name": string, "roles": [string] }],
+"tracks": [{ "number": number, "title": string, "lyricsBy": [string], "musicBy": [string], "except": [{ "name": string, "roles": [string] }] }] [{ "name": string, "roles": [string] }] }]}
 
 "lineup" holds only what is TRUE OF EVERY TRACK. A role belongs there only if that person
 plays it on all of them. If someone's instruments change track to track, list only their
@@ -117,6 +119,14 @@ track are usually playing different things — say which. Only fall back to a pl
 ORDER within every roles array: lead vocals, guitars, bass, drums and percussion, then
 everything else (backing vocals, keyboards, horns, strings and guests last).
 
+WRITERS PER TRACK. For each track, fill "lyricsBy" with whoever wrote the words and
+"musicBy" with whoever wrote the music. On most rock records these are the same people —
+put the same names in both. Where they genuinely differ (Elton John and Bernie Taupin,
+Rodgers and Hammerstein, Bowie's Ron Davies covers), credit each correctly. Judge each song
+on its own; do not carry a writer across from the previous track. Use the legal credit only
+when the song really was co-written. Leave both arrays empty for instrumentals with no
+composer credit.
+
 Include one entry per track, and copy the "title" back exactly as given to you along with
 its number. The track list is supplied — do not reorder it, rename it, or work from your
 own memory of the running order. Include an entry even when "except" is empty.
@@ -149,7 +159,11 @@ Specifically:
   - Never add vocal credits to an instrumental track. If a track has no singing, no one
     gets a vocal credit.
   - Never pad a track with musicians who played on other tracks of the album.
-  - Where a source is silent, leave it out rather than filling it in. Fewer credits that
+  -Where a source is silent about WHICH tracks someone played, still include them — put them
+in the lineup with their documented instruments if the credits imply they play throughout,
+or spread them across the tracks the sources do indicate. Dropping a credited musician
+entirely is a worse error than placing them imprecisely. Every musician named in the
+album's published credits must appear somewhere in the sheet. Fewer credits that
     are right beats more credits that are plausible.
 
 When sources conflict, prefer detailed session logs and sessionographies over summary
@@ -384,11 +398,15 @@ function salvageJson(body) {
 }
 
 const INSTRUMENT_ORDER = [
-  [/backing vocal|harmony vocal|background vocal/i, 4],
+  [/backing vocal|harmony vocal|background vocal/i, 7],
   [/lead vocal|^vocals?$|^vocal/i, 0],
-  [/guitars?$|guitar|banjo|mandolin|sitar|lap steel|pedal steel|dobro/i, 1],
-  [/^bass|double bass|upright bass/i, 2],
-  [/drum|percussion|congas|timbales|vibraphone|tabla/i, 3],
+  [/lead (electric )?guitar|lead guitars/i, 1],
+  [/rhythm (electric )?guitar/i, 2],
+  [/guitar|banjo|mandolin|sitar|lap steel|pedal steel|dobro/i, 3],
+  [/bassoon|bass clarinet|bass drum|bass trombone|bass saxophone/i, 7],
+  [/\bbass\b|guitarr[oó]n/i, 4],
+  [/drum/i, 5],
+  [/percussion|congas|timbales|vibraphone|tabla/i, 6],
 ];
 
 function rankRole(role) {
@@ -673,19 +691,62 @@ let details = null;
 
       const merged = {
         lineup: personnel.lineup || [],
-        tracks: (details.tracks || []).map((t) => ({
+       tracks: (details.tracks || []).map((t) => ({
           ...t,
+         writerData: (() => {
+            const pt =
+              (personnel.tracks || []).find(
+                (p) =>
+                  String(p.title || "").toLowerCase().trim() ===
+                  String(t.title || "").toLowerCase().trim()
+              ) || {};
+            return { lyrics: pt.lyricsBy || [], music: pt.musicBy || [] };
+          })(),
           except:
             byTitle.get(String(t.title || "").toLowerCase().trim()) ||
             byNumber.get(t.number) ||
             [],
         })),
       };
+
       const tracks = expandTracks(merged);
       const { core, additional } = splitPersonnel(tracks);
+const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
+      const coreNames = new Set(core.map((c) => c.name));
+
+     const writerLabel = (writers) => {
+        const list = (writers || []).filter(Boolean);
+        if (list.length === 0) return "";
+
+        const coreLast = new Set([...coreNames].map(lastName));
+        const inCore = list.filter((w) => coreLast.has(lastName(w)));
+        const outside = list.filter((w) => !coreLast.has(lastName(w)));
+
+        // whole band writing together is billed as the band
+        if (inCore.length === coreNames.size && coreNames.size > 0) {
+          if (outside.length === 0) return details.artist;
+          return `${details.artist} and ${outside.join(" and ")}`;
+        }
+
+        return [...inCore.map(lastName), ...outside.map(lastName)].join("/");
+      };
+
+     const tracksWithWriters = tracks.map((t) => {
+        const lyrics = writerLabel((t.writerData || {}).lyrics);
+        const music = writerLabel((t.writerData || {}).music);
+        let label = "";
+        if (lyrics && lyrics === music)
+          label = `Music and lyrics by:\n${lyrics}`;
+        else if (lyrics && music)
+          label = `Music by:\n${music}\nLyrics by:\n${lyrics}`;
+        else if (music) label = `Music by:\n${music}`;
+        else if (lyrics) label = `Lyrics by:\n${lyrics}`;
+        return { ...t, writerLabel: label };
+      });
       const built = {
         ...details,
-        tracks,
+       
+        tracks: tracksWithWriters,
         corePersonnel: core,
         additionalPersonnel: additional,
       };
@@ -1562,6 +1623,7 @@ function Row({ label, value }) {
           padding: "9px 12px",
           fontFamily: "'Spectral', Georgia, serif",
           fontSize: 15,
+          whiteSpace: "pre-line",
         }}
       >
         {value}
@@ -1571,7 +1633,7 @@ function Row({ label, value }) {
 }
 
 function Sheet({ sheet }) {
-  const sig = sheet.signature || "";
+  
   return (
     <div style={{ marginTop: 40 }}>
       {/* title block */}
@@ -1613,15 +1675,10 @@ function Sheet({ sheet }) {
         <Row label="Year" value={sheet.year} />
         <Row label="Genre" value={sheet.genre} />
         <Row label="Producer" value={sheet.producer} />
-        <Row label="Signature" value={sig} />
-        <Row label="Note" value={sheet.note} />
+       
       </div>
 
-      <Band>Writing credits</Band>
-      <div>
-        <Row label="Lyrics by" value={sheet.lyricsBy} />
-        <Row label="Music by" value={sheet.musicBy} />
-      </div>
+   
 
       <Band>Core personnel</Band>
       <div
@@ -1675,31 +1732,81 @@ function Sheet({ sheet }) {
               >
                 {t.number}. {t.title}
               </div>
-            </div>
-            <div style={{ flex: 1, padding: "11px 12px" }}>
-              {(t.personnel || []).length === 0 && (
+              {t.writerLabel && (
                 <div
                   style={{
                     fontFamily: "'JetBrains Mono', monospace",
                     fontSize: 11,
                     color: MUTED,
+                    marginTop: 4,
+                    whiteSpace: "pre-line",
                   }}
                 >
-                  personnel loading...
+                  {t.writerLabel}
                 </div>
               )}
-              {(t.personnel || []).filter((p) => (p.roles || []).length > 0).map((p, j) => (
-                <div
-                  key={j}
-                  style={{
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 12,
-                    lineHeight: 1.75,
-                  }}
-                >
-                  {p.name} ({(p.roles || []).join(", ")})
-                </div>
-              ))}
+            </div>
+            <div style={{ flex: 1, padding: "11px 12px" }}>
+              {(() => {
+                const people = (t.personnel || []).filter(
+                  (p) => (p.roles || []).length > 0
+                );
+
+                if (people.length === 0) {
+                  return (
+                    <div
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 11,
+                        color: MUTED,
+                      }}
+                    >
+                      personnel loading...
+                    </div>
+                  );
+                }
+
+                const key = (list) =>
+                  list
+                    .map((x) => `${x.name}|${x.roles.join(",")}`)
+                    .sort()
+                    .join("~");
+
+                const coreList = (sheet.corePersonnel || []).map((c) => ({
+                  name: c.name,
+                  roles: c.role.split(", "),
+                }));
+
+                if (coreList.length > 0 && key(people) === key(coreList)) {
+                  return (
+                    <div
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 12,
+                        color: MUTED,
+                        fontStyle: "italic",
+                      }}
+                    >
+                      Same as core personnel
+                    </div>
+                  );
+                }
+
+                return people
+                  .sort((a, b) => rankPerson(a.roles) - rankPerson(b.roles))
+                  .map((p, j) => (
+                    <div
+                      key={j}
+                      style={{
+                        fontFamily: "'JetBrains Mono', monospace",
+                        fontSize: 12,
+                        lineHeight: 1.75,
+                      }}
+                    >
+                      {p.name} ({(p.roles || []).join(", ")})
+                    </div>
+                  ));
+              })()}
             </div>
           </div>
         ))}
