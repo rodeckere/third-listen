@@ -4,6 +4,7 @@ export async function POST(request) {
   const body = {
     model: model || "claude-sonnet-4-6",
     max_tokens: maxTokens || 4000,
+    temperature: 0,
     messages: [{ role: "user", content: prompt }],
   };
 

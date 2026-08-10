@@ -15,6 +15,18 @@ const MUTED = "#8B8778";
 const SPOT = "#5FB0BE";       // cool teal, legible on dark
 const HEAT = "#E4593C";       // vermilion, still the accent
 const RULE = "#2E323B";
+const LOADING_LINES = [
+  "Dropping the needle",
+  "Blowing dust off the sleeve",
+  "Reading the small print",
+  "Checking who played what",
+  "Cross-referencing the session sheets",
+  "Finding out who really played bass",
+  "Warming up the tubes",
+  "Arguing with the liner notes",
+  "Flipping to side two",
+  "Counting the guitarists",
+];
 
 const DETAILS_PROMPT = `You are a music documentarian. Describe one album.
 
@@ -49,8 +61,7 @@ Return ONLY valid JSON, compact, no commentary.
 Shape:
 {
   "lineup": [{ "name": string, "roles": [string] }],
-  "tracks": [{ "number": number, "except": [{ "name": string, "roles": [string] }] }]
-}
+"tracks": [{ "number": number, "title": string, "except": [{ "name": string, "roles": [string] }] }]}
 
 "lineup" holds only what is TRUE OF EVERY TRACK. A role belongs there only if that person
 plays it on all of them. If someone's instruments change track to track, list only their
@@ -106,8 +117,24 @@ track are usually playing different things — say which. Only fall back to a pl
 ORDER within every roles array: lead vocals, guitars, bass, drums and percussion, then
 everything else (backing vocals, keyboards, horns, strings and guests last).
 
-Include one entry per track, numbered in running order, even when "except" is empty.
+Include one entry per track, and copy the "title" back exactly as given to you along with
+its number. The track list is supplied — do not reorder it, rename it, or work from your
+own memory of the running order. Include an entry even when "except" is empty.
+MUSICIANS ONLY. The personnel are people who played or sang on the track. Producers,
+engineers, arrangers-who-did-not-play, and mixers do NOT belong in track personnel. George
+Martin appears only if he actually played an instrument on that specific track. Never
+credit "producer" or "recording engineer" as a role.
 
+ONE TRACK AT A TIME. Work through the tracks individually. Do not carry a distinctive
+detail from one song onto another because they are on the same album — a sitar or tabla
+player on one track does not appear on the next, and the writer of one song is not the
+writer of the next. Before writing each track, ask who actually sings lead on THAT song.
+Getting the lead vocalist wrong is the worst error you can make.
+
+WRITERS AND SINGERS ARE PER TRACK. On albums where different members write and sing
+different songs (The Beatles, Fleetwood Mac, The Band, Wilco), assign the lyrics credit and
+the lead vocal to the correct person for each individual song, never to one default person
+for the album.
 ACCURACY — THE OVERRIDING RULE. Never invent anything. Not a name, not an instrument, not
 a detail. If a source does not state it, it does not go in the sheet. An incomplete sheet
 is correct; a filled-in one that guesses is not.
@@ -514,12 +541,23 @@ export default function AlbumSheetGenerator() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestState, setSuggestState] = useState("");
+
   const [open, setOpen] = useState({});
   const [discoCache, setDiscoCache] = useState({});
   const [loadingArtist, setLoadingArtist] = useState("");
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
+  const [loadingLine, setLoadingLine] = useState(0);
+
+  React.useEffect(() => {
+    if (!loading) return;
+    setLoadingLine(Math.floor(Math.random() * LOADING_LINES.length));
+    const timer = setInterval(() => {
+      setLoadingLine((i) => (i + 1) % LOADING_LINES.length);
+    }, 2200);
+    return () => clearInterval(timer);
+  }, [loading]);
 
   async function ask(prompt, maxTokens, useSearch, model) {
     const payload = {
@@ -595,14 +633,9 @@ const res = await fetch("/api/sheet", {
     setError("");
     setSheet(null);
 
-    // Two smaller requests run at once: total wait is the slower one, not the sum.
-    const detailsCall = ask(`${DETAILS_PROMPT}\n\nAlbum: ${title}`, 2000);
-    const personnelCall = ask(`${PERSONNEL_PROMPT}\n\nAlbum: ${title}`, 8000, true);
-
-    let details = null;
+let details = null;
     try {
-      details = await detailsCall;
-      // show titles and signatures immediately; personnel fills in when it arrives
+      details = await ask(`${DETAILS_PROMPT}\n\nAlbum: ${title}`, 2000);
       setSheet({
         ...details,
         tracks: (details.tracks || []).map((t) => ({ ...t, personnel: [] })),
@@ -618,15 +651,34 @@ const res = await fetch("/api/sheet", {
     }
 
     try {
-      const personnel = await personnelCall;
+      const trackList = (details.tracks || [])
+        .map((t) => `${t.number}. ${t.title}`)
+        .join("\n");
+
+      const personnel = await ask(
+        `${PERSONNEL_PROMPT}\n\nAlbum: ${title}\n\nThese are the tracks, in this exact order. Use these numbers and titles verbatim:\n${trackList}`,
+        8000,
+        true
+      );
+
+      const byTitle = new Map(
+        (personnel.tracks || []).map((t) => [
+          String(t.title || "").toLowerCase().trim(),
+          t.except || [],
+        ])
+      );
       const byNumber = new Map(
         (personnel.tracks || []).map((t) => [t.number, t.except || []])
       );
+
       const merged = {
         lineup: personnel.lineup || [],
         tracks: (details.tracks || []).map((t) => ({
           ...t,
-          except: byNumber.get(t.number) || [],
+          except:
+            byTitle.get(String(t.title || "").toLowerCase().trim()) ||
+            byNumber.get(t.number) ||
+            [],
         })),
       };
       const tracks = expandTracks(merged);
@@ -1367,7 +1419,7 @@ async function run(override) {
             }}
           >
             <Record size={26} />
-            Building {pending.split(",")[0]} — this takes a few seconds
+            {LOADING_LINES[loadingLine]} — {pending.split(",")[0]} — this takes a few seconds
           </div>
         )}
 
@@ -1636,7 +1688,7 @@ function Sheet({ sheet }) {
                   personnel loading...
                 </div>
               )}
-              {(t.personnel || []).map((p, j) => (
+              {(t.personnel || []).filter((p) => (p.roles || []).length > 0).map((p, j) => (
                 <div
                   key={j}
                   style={{
