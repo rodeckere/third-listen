@@ -35,6 +35,8 @@ Return ONLY valid JSON, compact, no commentary.
 Shape:
 {
   "album": string, "artist": string, "year": string, "genre": string, "producer": string,
+  "engineer": string, "label": string, "recordedAt": string, "recordedDates": string,
+  "length": string,
  
   "tracks": [{ "number": number, "title": string }]
 }
@@ -42,7 +44,13 @@ Shape:
 
 
 
-
+engineer: recording engineer(s), comma separated. "" if not documented.
+label: the original release label.
+recordedAt: studio name and city, e.g. "Abbey Road Studios, London". Several studios get
+comma separated. "" if not documented.
+recordedDates: the recording period, e.g. "April-June 1966" or "1987-1988". "" if unknown.
+length: total running time as m:ss or h:mm:ss, e.g. "48:12".
+Leave any field "" rather than guessing.
 List every track in running order.
 
 
@@ -639,6 +647,8 @@ const res = await fetch("/api/sheet", {
   async function buildSheet(title) {
     if (!title) return;
     setDiscography(null);
+    setMatches(null);
+    setOpen({});
 
     const hit = cache[title.toLowerCase()];
     if (hit) {
@@ -653,7 +663,7 @@ const res = await fetch("/api/sheet", {
 
 let details = null;
     try {
-      details = await ask(`${DETAILS_PROMPT}\n\nAlbum: ${title}`, 2000);
+      details = await ask(`${DETAILS_PROMPT}\n\nAlbum: ${title}`, 3000, true);
       setSheet({
         ...details,
         tracks: (details.tracks || []).map((t) => ({ ...t, personnel: [] })),
@@ -731,7 +741,28 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
         return [...inCore.map(lastName), ...outside.map(lastName)].join("/");
       };
 
-     const tracksWithWriters = tracks.map((t) => {
+     const allNames = new Set();
+      (core || []).forEach((c) => allNames.add(c.name));
+      (additional || []).forEach((a) => allNames.add(a.name));
+      tracks.forEach((t) =>
+        (t.personnel || []).forEach((p) => allNames.add(p.name))
+      );
+
+      const surnameCount = new Map();
+      allNames.forEach((n) => {
+        const s = lastName(n);
+        surnameCount.set(s, (surnameCount.get(s) || 0) + 1);
+      });
+
+      const shortName = (full) => {
+        const parts = String(full).trim().split(/\s+/);
+        if (parts.length < 2) return full;
+        const surname = parts[parts.length - 1];
+        const count = surnameCount.get(surname) || 0;
+        if (count > 1) return `${parts[0][0]}. ${surname}`;
+        return surname;
+      };
+      const tracksWithWriters = tracks.map((t) => {
         const lyrics = writerLabel((t.writerData || {}).lyrics);
         const music = writerLabel((t.writerData || {}).music);
         let label = "";
@@ -846,13 +877,13 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
   }
 
 async function toggleArtist(name, mbid) {
-    if (open[name]) {
-      setOpen((o) => ({ ...o, [name]: false }));
+    if (open[mbid]) {
+      setOpen((o) => ({ ...o, [mbid]: false }));
       return;
     }
-    setOpen((o) => ({ ...o, [name]: true }));
-    if (discoCache[name] || loadingArtist) return;
-    setLoadingArtist(name);
+    setOpen((o) => ({ ...o, [mbid]: true }));
+    if (discoCache[mbid] || loadingArtist) return;
+    setLoadingArtist(mbid);
     try {
       const res = await fetch(`/api/mb-albums?mbid=${mbid}`);
       const data = await res.json();
@@ -868,9 +899,9 @@ async function toggleArtist(name, mbid) {
         }))
         .sort((a, b) => (a.year || "9999").localeCompare(b.year || "9999"));
 
-      setDiscoCache((c) => ({ ...c, [name]: { albums, truncated: false } }));
+      setDiscoCache((c) => ({ ...c, [mbid]: { albums, truncated: false } }));
     } catch (e) {
-      setDiscoCache((c) => ({ ...c, [name]: { albums: [], error: e.message } }));
+      setDiscoCache((c) => ({ ...c, [mbid]: { albums: [], error: e.message } }));
     } finally {
       setLoadingArtist("");
     }
@@ -1259,9 +1290,9 @@ async function run(override) {
 
             <div style={{ display: view === "artists" ? "block" : "none" }}>
               {matches.artists.map((m, i) => {
-                const isOpen = !!open[m.name];
-                const entry = discoCache[m.name];
-                const busy = loadingArtist === m.name;
+                const isOpen = !!open[m.mbid];
+                const entry = discoCache[m.mbid];
+                const busy = loadingArtist === m.mbid;
                 return (
                   <div key={i} style={{ borderBottom: `1px solid ${RULE}` }}>
                     <button
@@ -1632,6 +1663,23 @@ function Row({ label, value }) {
   );
 }
 
+function shortNameOf(full, sheet) {
+  const parts = String(full).trim().split(/\s+/);
+  if (parts.length < 2) return full;
+  const surname = parts[parts.length - 1];
+  const names = new Set();
+  (sheet.corePersonnel || []).forEach((c) => names.add(c.name));
+  (sheet.additionalPersonnel || []).forEach((a) => names.add(a.name));
+  (sheet.tracks || []).forEach((t) =>
+    (t.personnel || []).forEach((p) => names.add(p.name))
+  );
+  let count = 0;
+  names.forEach((n) => {
+    const bits = String(n).trim().split(/\s+/);
+    if (bits[bits.length - 1] === surname) count++;
+  });
+  return count > 1 ? `${parts[0][0]}. ${surname}` : surname;
+}
 function Sheet({ sheet }) {
   
   return (
@@ -1673,8 +1721,14 @@ function Sheet({ sheet }) {
       <Band>Album details</Band>
       <div>
         <Row label="Year" value={sheet.year} />
+        <Row label="Label" value={sheet.label} />
         <Row label="Genre" value={sheet.genre} />
+        <Row label="Tracks" value={String((sheet.tracks || []).length || "")} />
+        <Row label="Length" value={sheet.length} />
+        <Row label="Recorded" value={sheet.recordedDates} />
+        <Row label="Recorded at" value={sheet.recordedAt} />
         <Row label="Producer" value={sheet.producer} />
+        <Row label="Engineer" value={sheet.engineer} />
        
       </div>
 
@@ -1717,32 +1771,59 @@ function Sheet({ sheet }) {
             key={i}
             style={{
               display: "flex",
-              borderTop: i === 0 ? "none" : `2px solid ${RULE}`,
-              borderBottom: `1px solid ${RULE}`,
+              borderTop: i === 0 ? "none" : `2px solid ${HEAT}`,
+              borderBottom: "none",
             }}
           >
-            <div style={{ flex: "0 0 210px", background: PAPER_DEEP, color: TEXT, padding: "11px 12px" }}>
+            <div
+              style={{
+                flex: "0 0 210px",
+                background: PAPER_DEEP,
+                color: TEXT,
+                padding: "14px 12px",
+                borderTop: `2px solid ${RULE}`,
+                borderRight: `2px solid ${RULE}`,
+              }}
+            >
               <div
                 style={{
                   fontFamily: "'Spectral', Georgia, serif",
-                  fontWeight: 600,
-                  fontSize: 15,
+                  fontWeight: 700,
+                  fontSize: 17,
                   lineHeight: 1.25,
                 }}
               >
                 {t.number}. {t.title}
               </div>
               {t.writerLabel && (
-                <div
-                  style={{
-                    fontFamily: "'JetBrains Mono', monospace",
-                    fontSize: 11,
-                    color: MUTED,
-                    marginTop: 4,
-                    whiteSpace: "pre-line",
-                  }}
-                >
-                  {t.writerLabel}
+                <div style={{ marginTop: 14 }}>
+                  {t.writerLabel.split("\n").map((line, k) => {
+                    const isLabel = line.trim().endsWith("by:");
+                    return (
+                      <div
+                        key={k}
+                        style={
+                          isLabel
+                            ? {
+                                fontFamily: "'JetBrains Mono', monospace",
+                                fontSize: 10.5,
+                                letterSpacing: "0.08em",
+                                textTransform: "uppercase",
+                                color: SPOT,
+                                marginTop: k === 0 ? 0 : 6,
+                              }
+                            : {
+                                fontFamily: "'Spectral', Georgia, serif",
+                                fontSize: 14,
+                                color: TEXT,
+                                lineHeight: 1.4,
+                              }
+                        }
+                      >
+                        {isLabel ? line.replace(/:$/, "") : line}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1803,7 +1884,7 @@ function Sheet({ sheet }) {
                         lineHeight: 1.75,
                       }}
                     >
-                      {p.name} ({(p.roles || []).join(", ")})
+                      {shortNameOf(p.name, sheet)} ({(p.roles || []).join(", ")})
                     </div>
                   ));
               })()}
