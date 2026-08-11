@@ -53,8 +53,23 @@ function extractPalette(img) {
     if (ranked.length === 0) return null;
 
     const lift = ([r, g, b]) => {
-      const boost = (v) => Math.min(255, Math.round(v * 1.25 + 8));
-      return `rgb(${boost(r)}, ${boost(g)}, ${boost(b)})`;
+      const boost = ([r, g, b]) => {
+        // widen the gap between channels so washed-out colours gain identity
+        const avg = (r + g + b) / 3;
+        const sat = 1.9;
+        let nr = avg + (r - avg) * sat;
+        let ng = avg + (g - avg) * sat;
+        let nb = avg + (b - avg) * sat;
+
+        const lum = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
+        const target = 165;
+        const k = lum < target ? target / Math.max(lum, 1) : 1;
+
+        const up = (v) => Math.max(0, Math.min(255, Math.round(v * k)));
+        return [up(nr), up(ng), up(nb)];
+      };
+      const [br, bg, bb] = boost([r, g, b]);
+      return `rgb(${br}, ${bg}, ${bb})`;
     };
     const dist = (a, b) =>
       Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
@@ -1674,15 +1689,14 @@ function Band({ children }) {
     <div
       style={{
         background: PAPER_DEEP,
-        color: TEXT,
-        borderLeft: "3px solid var(--sheet-heat)",
-        fontFamily: "'JetBrains Mono', monospace",
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.18em",
+        color: "var(--sheet-heat)",
+        borderLeft: "5px solid var(--sheet-heat)",
+        fontFamily: "'Archivo Black', sans-serif",
+        fontSize: 15,
+        letterSpacing: "0.12em",
         textTransform: "uppercase",
-        padding: "7px 12px",
-        marginTop: 30,
+        padding: "12px 14px",
+        marginTop: 38,
         display: "flex",
         alignItems: "center",
         gap: 9,
@@ -1816,10 +1830,10 @@ function Sheet({ sheet }) {
           </div>
           <div
             style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 13,
-              letterSpacing: "0.26em",
-              marginTop: 10,
+              fontFamily: "'Archivo Black', sans-serif",
+              fontSize: 20,
+              letterSpacing: "0.12em",
+              marginTop: 12,
               color: "var(--sheet-spot)",
             }}
           >
@@ -1888,7 +1902,7 @@ function Sheet({ sheet }) {
             key={i}
             style={{
               display: "flex",
-              borderTop: i === 0 ? "none" : `2px solid ${HEAT}`,
+              borderTop: i === 0 ? "none" : "2px solid var(--sheet-heat)",
               borderBottom: "none",
             }}
           >
