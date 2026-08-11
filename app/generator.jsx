@@ -15,6 +15,57 @@ const MUTED = "#8B8778";
 const SPOT = "#5FB0BE";       // cool teal, legible on dark
 const HEAT = "#E4593C";       // vermilion, still the accent
 const RULE = "#2E323B";
+const DEFAULT_HEAT = "#E4593C";
+const DEFAULT_SPOT = "#5FB0BE";
+
+function extractPalette(img) {
+  try {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, size, size);
+    const { data } = ctx.getImageData(0, 0, size, size);
+
+    const buckets = new Map();
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const lum = (max + min) / 2;
+      const sat = max === min ? 0 : (max - min) / (255 - Math.abs(max + min - 255));
+      if (lum < 45 || lum > 225 || sat < 0.28) continue;
+      const key = `${Math.round(r / 24)}-${Math.round(g / 24)}-${Math.round(b / 24)}`;
+      const entry = buckets.get(key) || { r: 0, g: 0, b: 0, n: 0 };
+      entry.r += r; entry.g += g; entry.b += b; entry.n += 1;
+      buckets.set(key, entry);
+    }
+
+    const ranked = [...buckets.values()]
+      .filter((e) => e.n > 8)
+      .sort((a, b) => b.n - a.n)
+      .map((e) => [
+        Math.round(e.r / e.n),
+        Math.round(e.g / e.n),
+        Math.round(e.b / e.n),
+      ]);
+
+    if (ranked.length === 0) return null;
+
+    const lift = ([r, g, b]) => {
+      const boost = (v) => Math.min(255, Math.round(v * 1.25 + 8));
+      return `rgb(${boost(r)}, ${boost(g)}, ${boost(b)})`;
+    };
+    const dist = (a, b) =>
+      Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]);
+
+    const first = ranked[0];
+    const second = ranked.find((c) => dist(c, first) > 110) || ranked[1] || first;
+    return { heat: lift(first), spot: lift(second) };
+  } catch (e) {
+    return null;
+  }
+}
 const LOADING_LINES = [
   "Dropping the needle",
   "Blowing dust off the sleeve",
@@ -862,7 +913,13 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
       clearTimeout(timer);
     };
   }, [query, showSuggest]);
-
+React.useEffect(() => {
+    function onDocClick() {
+      setShowSuggest(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
   function chooseSuggestion(s) {
     setShowSuggest(false);
     setSuggestions([]);
@@ -1025,7 +1082,10 @@ async function run(override) {
 
         {/* input */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-          <div style={{ flex: "1 1 320px", position: "relative" }}>
+          <div
+            style={{ flex: "1 1 320px", position: "relative" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
           <input
             value={query}
             onChange={(e) => {
@@ -1094,8 +1154,11 @@ async function run(override) {
               {suggestions.map((s, i) => (
                 <button
                   key={i}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => chooseSuggestion(s)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    chooseSuggestion(s);
+                  }}
                   style={{
                     display: "flex",
                     width: "100%",
@@ -1612,7 +1675,7 @@ function Band({ children }) {
       style={{
         background: PAPER_DEEP,
         color: TEXT,
-        borderLeft: `3px solid ${HEAT}`,
+        borderLeft: "3px solid var(--sheet-heat)",
         fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
         fontWeight: 700,
@@ -1681,9 +1744,40 @@ function shortNameOf(full, sheet) {
   return count > 1 ? `${parts[0][0]}. ${surname}` : surname;
 }
 function Sheet({ sheet }) {
-  
+  const [cover, setCover] = React.useState("");
+  const [palette, setPalette] = React.useState(null);
+
+  React.useEffect(() => {
+    setCover("");
+    setPalette(null);
+    if (!sheet.album) return;
+    let cancelled = false;
+    fetch(
+      `/api/cover?album=${encodeURIComponent(sheet.album)}&artist=${encodeURIComponent(
+        sheet.artist || ""
+      )}`
+    )
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setCover(d.url || "");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sheet.album, sheet.artist]);
   return (
-    <div style={{ marginTop: 40 }}>
+    <div
+      style={{
+        marginTop: 40,
+        "--sheet-heat": palette ? palette.heat : DEFAULT_HEAT,
+        "--sheet-spot": palette ? palette.spot : DEFAULT_SPOT,
+        boxShadow: palette
+          ? `0 0 90px 50px ${palette.heat}18, 0 0 140px 90px ${palette.spot}12`
+          : "none",
+        transition: "box-shadow 600ms ease",
+      }}
+    >
       {/* title block */}
       <div
         style={{
@@ -1691,31 +1785,54 @@ function Sheet({ sheet }) {
           color: TEXT,
           padding: "26px 20px",
           textAlign: "center",
-          borderTop: `4px solid ${HEAT}`,
-          borderBottom: `4px solid ${SPOT}`,
+          borderTop: "4px solid var(--sheet-heat)",
+          borderBottom: "4px solid var(--sheet-spot)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 22,
         }}
       >
-        <div
-          style={{
-            fontFamily: "'Archivo Black', sans-serif",
-            fontSize: 34,
-            lineHeight: 1.05,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {(sheet.album || "").toUpperCase()}
+        {cover && (
+          <img
+            src={cover}
+            alt=""
+            crossOrigin="anonymous"
+            style={{ width: 96, height: 96, objectFit: "cover", flex: "0 0 auto" }}
+            onLoad={(e) => setPalette(extractPalette(e.target))}
+            onError={() => setCover("")}
+          />
+        )}
+        <div>
+          <div
+            style={{
+              fontFamily: "'Archivo Black', sans-serif",
+              fontSize: 34,
+              lineHeight: 1.05,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {(sheet.album || "").toUpperCase()}
+          </div>
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 13,
+              letterSpacing: "0.26em",
+              marginTop: 10,
+              color: "var(--sheet-spot)",
+            }}
+          >
+            {(sheet.artist || "").toUpperCase()}
+          </div>
         </div>
-        <div
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 13,
-            letterSpacing: "0.26em",
-            marginTop: 10,
-            color: SPOT,
-          }}
-        >
-          {(sheet.artist || "").toUpperCase()}
-        </div>
+        {cover && (
+          <img
+            src={cover}
+            alt=""
+            style={{ width: 96, height: 96, objectFit: "cover", flex: "0 0 auto" }}
+          />
+        )}
       </div>
 
       <Band>Album details</Band>
@@ -1809,7 +1926,7 @@ function Sheet({ sheet }) {
                                 fontSize: 10.5,
                                 letterSpacing: "0.08em",
                                 textTransform: "uppercase",
-                                color: SPOT,
+                                color: "var(--sheet-spot)",
                                 marginTop: k === 0 ? 0 : 6,
                               }
                             : {
