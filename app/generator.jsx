@@ -1293,18 +1293,7 @@ async function run(override) {
           </button>
         </div>
 
-        <p
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10.5,
-            color: MUTED,
-            letterSpacing: "0.04em",
-            marginTop: 0,
-          }}
-        >
-          AI-generated listening notes. Many albums publish album-level credits only, so
-          per-track personnel is best-effort.
-        </p>
+        
 
         {error && (
           <div
@@ -1660,6 +1649,19 @@ async function run(override) {
         )}
 
         {sheet && <Sheet sheet={sheet} />}
+        <p
+          style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10,
+            color: MUTED,
+            letterSpacing: "0.04em",
+            marginTop: 60,
+            textAlign: "center",
+          }}
+        >
+          AI-generated listening notes. Many albums publish album-level credits only, so
+          per-track personnel is best-effort.
+        </p>
       </div>
     </div>
   );
@@ -1756,7 +1758,7 @@ function Row({ label, value }) {
     <div style={{ display: "flex", borderBottom: `1px solid ${RULE}` }}>
       <div
         style={{
-          flex: "0 0 148px",
+          flex: "0 0 172px",
           background: PAPER_DEEP,
           color: TEXT,
           padding: "9px 12px",
@@ -1956,7 +1958,7 @@ function Sheet({ sheet }) {
         }}
       >
         On {Math.ceil((sheet.tracks || []).length / 2)} or more of {(sheet.tracks || []).length} tracks
-        {" \u00b7 credits checked against published sources where available"}
+        
       </div>
       <div>
         {(sheet.corePersonnel || []).map((p, i) => (
@@ -1975,6 +1977,7 @@ function Sheet({ sheet }) {
         )}
       </div>
 
+      <div style={{ marginTop: 24 }} />
       <Band>Tracks</Band>
       <div>
         {(sheet.tracks || []).map((t, i) => (
@@ -2091,6 +2094,20 @@ function Sheet({ sheet }) {
             </div>
           </div>
         ))}
+      </div>
+      <div
+        style={{
+          marginTop: 34,
+          borderTop: "3px solid var(--sheet-heat)",
+          paddingTop: 14,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10,
+          letterSpacing: "0.2em",
+          color: MUTED,
+          textAlign: "center",
+        }}
+      >
+        {(sheet.album || "").toUpperCase()}
       </div>
     </div>
   );
