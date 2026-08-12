@@ -155,8 +155,18 @@ say who played it, use an unnamed "Session drummer" style credit or leave it out
 close the gap by guessing a name. If a track has drums, somebody is credited with drums on it. Same for bass,
 guitar, keyboards, horns, strings. Never leave an audible instrument unattributed.
 
+ONLY WHAT THEY PLAYED ON THAT SONG. A multi-instrumentalist's album credit is the sum of
+everything they played across the record, not what they played on any one track. Someone
+credited "guitar, banjo, fiddle, lap steel, dobro" for the album is not playing all five on
+every song — usually one or two. Search for the specific song, and where the sources are
+silent, list only the instrument they play throughout the record and leave the rest off.
+Adding an instrument to a track it is not on is inventing a credit.
+
 Never list an instrument on a track where it is not played. A song with no drums must not
-show drums.
+show drums, and a song with no fiddle must not show fiddle.
+
+If you genuinely do not know whether someone played on a track at all, leave them off that
+track rather than assuming.
 
 CONSISTENCY, CAREFULLY — do not silently drop a player from tracks they did play. But do
 NOT solve that by applying one uniform roster to the whole album. Session rosters changed
@@ -2019,31 +2029,7 @@ function Sheet({ sheet }) {
                   );
                 }
 
-                const key = (list) =>
-                  list
-                    .map((x) => `${x.name}|${x.roles.join(",")}`)
-                    .sort()
-                    .join("~");
-
-                const coreList = (sheet.corePersonnel || []).map((c) => ({
-                  name: c.name,
-                  roles: c.role.split(", "),
-                }));
-
-                if (coreList.length > 0 && key(people) === key(coreList)) {
-                  return (
-                    <div
-                      style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: 12,
-                        color: MUTED,
-                        fontStyle: "italic",
-                      }}
-                    >
-                      Same as core personnel
-                    </div>
-                  );
-                }
+            
 
                 return people
                   .sort((a, b) => rankPerson(a.roles) - rankPerson(b.roles))
