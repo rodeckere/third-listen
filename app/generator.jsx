@@ -126,7 +126,12 @@ const PERSONNEL_PROMPT = `You are a music documentarian. Give the personnel for 
 
 SEARCH THE WEB FIRST, but keep it brief — two or three searches at most, then write the
 JSON. Look for the album's published credits and, where they exist, the per-track session
-personnel: AFM session sheets, box-set liner notes, Discogs credits, sessionography sites.
+personnel: Wikipedia, Discogs, AllMusic, official label or artist sites, box-set and reissue liner
+notes, AFM session sheets, and established sessionography sites.
+
+IGNORE unreliable sources: fan wikis, lyrics sites, forum posts, blog aggregators,
+retailer listings, and auto-generated content farms. If the only pages you find are of that
+kind, treat the credit as undocumented rather than using them.
 Use what you find in preference to memory. Do not keep searching once you have the credits;
 the JSON is the deliverable and it must always be written. Where sources disagree or
 are silent for a track, follow the accuracy rule at the end.
@@ -807,11 +812,18 @@ let details = null;
 
       const tracks = expandTracks(merged);
       const { core, additional } = splitPersonnel(tracks);
-const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
+const PARTICLES = /^(van|von|de|del|della|di|da|dos|du|la|le|el|st\.?|mac|mc|o'|ter|ten|af|av|bin|ibn)$/i;
+      const lastName = (n) => {
+        const parts = String(n).trim().split(/\s+/);
+        if (parts.length < 2) return parts[0] || "";
+        let start = parts.length - 1;
+        while (start > 1 && PARTICLES.test(parts[start - 1])) start--;
+        return parts.slice(start).join(" ");
+      };
       const coreNames = new Set(core.map((c) => c.name));
 
      const writerLabel = (writers) => {
-        const list = (writers || []).filter(Boolean);
+        const list = (writers || []).filter(Boolean).slice().sort();
         if (list.length === 0) return "";
 
         const coreLast = new Set([...coreNames].map(lastName));
@@ -1788,7 +1800,10 @@ function Row({ label, value }) {
 function shortNameOf(full, sheet) {
   const parts = String(full).trim().split(/\s+/);
   if (parts.length < 2) return full;
-  const surname = parts[parts.length - 1];
+  const PARTICLES = /^(van|von|de|del|della|di|da|dos|du|la|le|el|st\.?|mac|mc|o'|ter|ten|af|av|bin|ibn)$/i;
+  let start = parts.length - 1;
+  while (start > 1 && PARTICLES.test(parts[start - 1])) start--;
+  const surname = parts.slice(start).join(" ");
   const names = new Set();
   (sheet.corePersonnel || []).forEach((c) => names.add(c.name));
   (sheet.additionalPersonnel || []).forEach((a) => names.add(a.name));
@@ -1798,7 +1813,9 @@ function shortNameOf(full, sheet) {
   let count = 0;
   names.forEach((n) => {
     const bits = String(n).trim().split(/\s+/);
-    if (bits[bits.length - 1] === surname) count++;
+    let s = bits.length - 1;
+    while (s > 1 && PARTICLES.test(bits[s - 1])) s--;
+    if (bits.slice(s).join(" ") === surname) count++;
   });
   return count > 1 ? `${parts[0][0]}. ${surname}` : surname;
 }
