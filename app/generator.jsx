@@ -2012,10 +2012,20 @@ function Sheet({ sheet }) {
                       style={{
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 12,
-                        lineHeight: 1.75,
+                        lineHeight: 1.9,
                       }}
                     >
-                      {shortNameOf(p.name, sheet)} ({(p.roles || []).join(", ")})
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          color: "var(--sheet-spot)",
+                        }}
+                      >
+                        {shortNameOf(p.name, sheet)}
+                      </span>{" "}
+                      <span style={{ color: MUTED }}>
+                        {(p.roles || []).join(", ")}
+                      </span>
                     </div>
                   ));
               })()}
