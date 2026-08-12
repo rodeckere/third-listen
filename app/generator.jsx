@@ -196,10 +196,16 @@ everything else (backing vocals, keyboards, horns, strings and guests last).
 WRITERS PER TRACK. For each track, fill "lyricsBy" with whoever wrote the words and
 "musicBy" with whoever wrote the music. On most rock records these are the same people —
 put the same names in both. Where they genuinely differ (Elton John and Bernie Taupin,
-Rodgers and Hammerstein, Bowie's Ron Davies covers), credit each correctly. Judge each song
-on its own; do not carry a writer across from the previous track. Use the legal credit only
-when the song really was co-written. Leave both arrays empty for instrumentals with no
-composer credit.
+Rodgers and Hammerstein), credit each correctly.
+
+WRITERS ARE NOT PLAYERS. Never take a name from the personnel credits and use it as a
+writer. A session musician credited on a song did not write it. Check the songwriting
+credit itself.
+
+COVERS. If a track is a cover, credit the original songwriter, not the artist performing
+it. Judge each song on its own; do not carry a writer across from the previous track. Leave
+both arrays empty for instrumentals with no composer credit. Every song with a composer has one. If you cannot recall who wrote a track, search for it
+rather than leaving it blank — a missing writing credit is a failure, not a safe default.
 
 Include one entry per track, and copy the "title" back exactly as given to you along with
 its number. The track list is supplied — do not reorder it, rename it, or work from your
@@ -233,11 +239,15 @@ Specifically:
   - Never add vocal credits to an instrumental track. If a track has no singing, no one
     gets a vocal credit.
   - Never pad a track with musicians who played on other tracks of the album.
-  -Where a source is silent about WHICH tracks someone played, still include them — put them
-in the lineup with their documented instruments if the credits imply they play throughout,
-or spread them across the tracks the sources do indicate. Dropping a credited musician
-entirely is a worse error than placing them imprecisely. Every musician named in the
-album's published credits must appear somewhere in the sheet. Fewer credits that
+  -EVERY CREDITED MUSICIAN MUST APPEAR. Do not drop anyone the sources name.
+
+Where the credits attach a musician to specific songs — phrasings like "drums on Live
+Free", "accordion on Too Early", "bass on Mystifies Me" — that person belongs in that
+track's "except" list ONLY, never in the lineup. These per-song credits are the most
+important detail on the sheet; losing them makes every track look identical.
+
+Where a source names a musician with no song attached, put them in the lineup. Where it is
+genuinely unclear, prefer the lineup over omitting them. Fewer credits that
     are right beats more credits that are plausible.
 
 When sources conflict, prefer detailed session logs and sessionographies over summary
@@ -804,7 +814,7 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
           return `${details.artist} and ${outside.join(" and ")}`;
         }
 
-        return [...inCore.map(lastName), ...outside.map(lastName)].join("/");
+        return [...inCore.map(lastName), ...outside].join("/");
       };
 
      const allNames = new Set();
@@ -828,6 +838,28 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
         if (count > 1) return `${parts[0][0]}. ${surname}`;
         return surname;
       };
+      const tally = (which) => {
+        const counts = new Map();
+        tracks.forEach((t) => {
+          const list = ((t.writerData || {})[which] || []).filter(Boolean);
+          if (list.length === 0) return;
+          const label = writerLabel(list);
+          if (!label) return;
+          counts.set(label, (counts.get(label) || 0) + 1);
+        });
+        const total = tracks.length;
+        const ranked = [...counts.entries()].sort(
+          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0])
+        );
+        if (ranked.length === 0) return "";
+        if (ranked.length === 1 && ranked[0][1] === total) return ranked[0][0];
+        return ranked
+          .map(([name, n]) => `${name} (${n})`)
+          .join("\n");
+      };
+
+      const lyricsSummary = tally("lyrics");
+      const musicSummary = tally("music");
       const tracksWithWriters = tracks.map((t) => {
         const lyrics = writerLabel((t.writerData || {}).lyrics);
         const music = writerLabel((t.writerData || {}).music);
@@ -842,7 +874,8 @@ const lastName = (n) => String(n).trim().split(/\s+/).slice(-1)[0];
       });
       const built = {
         ...details,
-       
+       lyricsSummary,
+        musicSummary,
         tracks: tracksWithWriters,
         corePersonnel: core,
         additionalPersonnel: additional,
@@ -1854,6 +1887,14 @@ function Sheet({ sheet }) {
         <Row label="Year" value={sheet.year} />
         <Row label="Label" value={sheet.label} />
         <Row label="Genre" value={sheet.genre} />
+        {sheet.musicSummary === sheet.lyricsSummary ? (
+          <Row label="Written by" value={sheet.musicSummary} />
+        ) : (
+          <>
+            <Row label="Music by" value={sheet.musicSummary} />
+            <Row label="Lyrics by" value={sheet.lyricsSummary} />
+          </>
+        )}
         <Row label="Tracks" value={String((sheet.tracks || []).length || "")} />
         <Row label="Length" value={sheet.length} />
         <Row label="Recorded" value={sheet.recordedDates} />
