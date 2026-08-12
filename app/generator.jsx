@@ -1092,7 +1092,7 @@ async function run(override) {
     <div style={{ background: PAPER, minHeight: "100vh", color: TEXT }}>
       <style>{FONTS}</style>
 
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "48px 24px 96px" }}>
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "48px 24px 160px" }}>
         {/* masthead */}
         <div style={{ borderBottom: `2px solid ${RULE}`, paddingBottom: 14, marginBottom: 28 }}>
           <div
@@ -1838,58 +1838,87 @@ function Sheet({ sheet }) {
       {/* title block */}
       <div
         style={{
+          position: "relative",
           background: INK,
           color: TEXT,
-          padding: "26px 20px",
-          textAlign: "center",
           borderTop: "4px solid var(--sheet-heat)",
           borderBottom: "4px solid var(--sheet-spot)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 22,
+          overflow: "hidden",
         }}
       >
         {cover && (
-          <img
-            src={cover}
-            alt=""
-            crossOrigin="anonymous"
-            style={{ width: 96, height: 96, objectFit: "cover", flex: "0 0 auto" }}
-            onLoad={(e) => setPalette(extractPalette(e.target))}
-            onError={() => setCover("")}
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              backgroundImage: `url(${cover})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "blur(38px) saturate(1.5)",
+              opacity: 0.32,
+              transform: "scale(1.25)",
+            }}
           />
         )}
-        <div>
-          <div
-            style={{
-              fontFamily: "'Archivo Black', sans-serif",
-              fontSize: 34,
-              lineHeight: 1.05,
-              letterSpacing: "-0.01em",
-            }}
-          >
-            {(sheet.album || "").toUpperCase()}
-          </div>
-          <div
-            style={{
-              fontFamily: "'Archivo Black', sans-serif",
-              fontSize: 20,
-              letterSpacing: "0.12em",
-              marginTop: 12,
-              color: "var(--sheet-spot)",
-            }}
-          >
-            {(sheet.artist || "").toUpperCase()}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: `linear-gradient(90deg, ${INK}F2 0%, ${INK}CC 55%, ${INK}F2 100%)`,
+          }}
+        />
+
+        <div
+          style={{
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            gap: 26,
+            padding: "30px 26px",
+          }}
+        >
+          {cover && (
+            <img
+              src={cover}
+              alt=""
+              crossOrigin="anonymous"
+              style={{
+                width: 176,
+                height: 176,
+                objectFit: "cover",
+                flex: "0 0 auto",
+                boxShadow: "0 10px 34px rgba(0,0,0,0.6)",
+              }}
+              onLoad={(e) => setPalette(extractPalette(e.target))}
+              onError={() => setCover("")}
+            />
+          )}
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: "'Archivo Black', sans-serif",
+                fontSize: 38,
+                lineHeight: 1.02,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              {(sheet.album || "").toUpperCase()}
+            </div>
+            <div
+              style={{
+                fontFamily: "'Archivo Black', sans-serif",
+                fontSize: 19,
+                letterSpacing: "0.12em",
+                marginTop: 14,
+                color: "var(--sheet-spot)",
+              }}
+            >
+              {(sheet.artist || "").toUpperCase()}
+            </div>
           </div>
         </div>
-        {cover && (
-          <img
-            src={cover}
-            alt=""
-            style={{ width: 96, height: 96, objectFit: "cover", flex: "0 0 auto" }}
-          />
-        )}
       </div>
 
       <Band>Album details</Band>
@@ -1962,7 +1991,10 @@ function Sheet({ sheet }) {
                 flex: "0 0 210px",
                 background: PAPER_DEEP,
                 color: TEXT,
-                padding: "14px 12px",
+                padding: "16px 14px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
                 borderTop: `2px solid ${RULE}`,
                 borderRight: `2px solid ${RULE}`,
               }}
@@ -1971,7 +2003,7 @@ function Sheet({ sheet }) {
                 style={{
                   fontFamily: "'Spectral', Georgia, serif",
                   fontWeight: 700,
-                  fontSize: 17,
+                  fontSize: 19,
                   lineHeight: 1.25,
                 }}
               >
@@ -2009,7 +2041,7 @@ function Sheet({ sheet }) {
                 </div>
               )}
             </div>
-            <div style={{ flex: 1, padding: "11px 12px" }}>
+            <div style={{ flex: 1, padding: "16px 14px" }}>
               {(() => {
                 const people = (t.personnel || []).filter(
                   (p) => (p.roles || []).length > 0
