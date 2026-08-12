@@ -3,6 +3,7 @@ import React, { useState } from "react";
 
 const FONTS = `
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes flashbar { 0% { opacity: 0; transform: translateY(-6px); } 100% { opacity: 1; transform: none; } }
 @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Spectral:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;700&display=swap');
 `;
 
@@ -608,19 +609,13 @@ function splitPersonnel(tracks) {
     if (count >= threshold) {
       // core: keep only the roles that themselves clear 50% of all tracks
       const kept = roleList
-        .filter(([, set]) => set.size >= threshold)
         .sort((a, b) => b[1].size - a[1].size)
         .map(([role]) => role);
 
-      const fallback = roleList.map(([role]) => role);
-      const shown = kept.length
-        ? sortRoles(collapseFamilies(roleList, threshold, kept))
-        : sortRoles(collapseFamilies(roleList, threshold, fallback));
+      const shown = sortRoles(kept);
       core.push({
         name,
-        role: kept.length
-          ? shown.join(", ")
-          : shown.join(", ") + " (no single role over 50%)",
+        role: shown.join(", "),
         rank: rankPerson(shown),
         count,
       });
@@ -658,6 +653,12 @@ export default function AlbumSheetGenerator() {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestState, setSuggestState] = useState("");
+  const buildToken = React.useRef(0);
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const album = params.get("album");
+    if (album) buildSheet(album);
+  }, []);
 
   const [open, setOpen] = useState({});
   const [discoCache, setDiscoCache] = useState({});
@@ -737,13 +738,18 @@ const res = await fetch("/api/sheet", {
 
   async function buildSheet(title) {
     if (!title) return;
+    buildToken.current += 1;
+    const myToken = buildToken.current;
     setDiscography(null);
     setMatches(null);
     setOpen({});
-
+setSheet(null);
+    setError("");
     const hit = cache[title.toLowerCase()];
     if (hit) {
       setSheet(hit);
+      setLoading(false);
+      setPending("");
       return;
     }
 
@@ -755,6 +761,7 @@ const res = await fetch("/api/sheet", {
 let details = null;
     try {
       details = await ask(`${DETAILS_PROMPT}\n\nAlbum: ${title}`, 3000, true);
+      if (myToken !== buildToken.current) return;
       setSheet({
         ...details,
         tracks: (details.tracks || []).map((t) => ({ ...t, personnel: [] })),
@@ -763,6 +770,7 @@ let details = null;
         _partial: true,
       });
     } catch (e) {
+      if (myToken !== buildToken.current) return;
       setError(`Couldn't build that sheet. ${e.message}`);
       setLoading(false);
       setPending("");
@@ -810,6 +818,7 @@ let details = null;
         })),
       };
 
+      if (myToken !== buildToken.current) return;
       const tracks = expandTracks(merged);
       const { core, additional } = splitPersonnel(tracks);
 const PARTICLES = /^(van|von|de|del|della|di|da|dos|du|la|le|el|st\.?|mac|mc|o'|ter|ten|af|av|bin|ibn)$/i;
@@ -905,10 +914,14 @@ const PARTICLES = /^(van|von|de|del|della|di|da|dos|du|la|le|el|st\.?|mac|mc|o'|
       setCache((c) => ({ ...c, [title.toLowerCase()]: built }));
       setSheet(built);
     } catch (e) {
-      setError(`Personnel unavailable. ${e.message}`);
+      if (myToken === buildToken.current) {
+        setError(`Personnel unavailable. ${e.message}`);
+      }
     } finally {
-      setLoading(false);
-      setPending("");
+      if (myToken === buildToken.current) {
+        setLoading(false);
+        setPending("");
+      }
     }
   }
 
@@ -1038,7 +1051,7 @@ async function run(override) {
     const value = (typeof override === "string" ? override : query).trim();
     setShowSuggest(false);
     setSuggestions([]);
-    if (!value || loading) return;
+    if (!value) return;
     setLoading(true);
     setError("");
     setSheet(null);
@@ -1625,11 +1638,12 @@ async function run(override) {
 
         {loading && pending && (
           <div
+                    key={pending}
             style={{
               marginTop: 26,
               padding: "12px 14px",
               border: `1.5px solid ${HEAT}`,
-              color: HEAT,
+                    color: HEAT,
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 12,
               letterSpacing: "0.08em",
@@ -1637,6 +1651,7 @@ async function run(override) {
               display: "flex",
               alignItems: "center",
               gap: 12,
+              animation: "flashbar 260ms ease",
             }}
           >
             <Record size={26} />
