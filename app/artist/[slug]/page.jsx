@@ -43,7 +43,9 @@ export default function ArtistPage() {
         const match = exact || list[0];
         if (!match) throw new Error("no artist");
         if (!cancelled) setName(match.name);
-        return fetch(`/api/mb-albums?mbid=${match.id}`).then((r) => r.json());
+        return new Promise((r) => setTimeout(r, 1200)).then(() =>
+          fetch(`/api/mb-albums?mbid=${match.id}`).then((r) => r.json())
+        );
       })
       .then((d) => {
         if (cancelled) return;
@@ -293,7 +295,9 @@ export default function ArtistPage() {
           {albums.map((a, i) => (
             <a
               key={i}
-              href={`/?album=${encodeURIComponent(`${a.title}, ${displayName}`)}`}
+             href={`/?album=${encodeURIComponent(
+                `${a.title}, ${displayName}`
+              )}&from=${encodeURIComponent(slug)}&name=${encodeURIComponent(displayName)}`}
               style={{
                 display: "flex",
                 alignItems: "baseline",

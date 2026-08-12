@@ -654,9 +654,13 @@ export default function AlbumSheetGenerator() {
   const [showSuggest, setShowSuggest] = useState(false);
   const [suggestState, setSuggestState] = useState("");
   const buildToken = React.useRef(0);
+  const [cameFrom, setCameFrom] = useState(null);
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const album = params.get("album");
+    const from = params.get("from");
+    const name = params.get("name");
+    if (from && name) setCameFrom({ slug: from, name });
     if (album) buildSheet(album);
   }, []);
 
@@ -1119,6 +1123,7 @@ async function run(override) {
 
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "48px 24px 160px" }}>
         {/* masthead */}
+        
         <div style={{ borderBottom: `2px solid ${RULE}`, paddingBottom: 14, marginBottom: 28 }}>
           <div
             style={{
@@ -1682,6 +1687,27 @@ async function run(override) {
           </button>
         )}
 
+        {sheet && cameFrom && (
+          <a          
+            href={`/artist/${cameFrom.slug}`}
+            style={{
+              display: "block",
+              width: "fit-content",
+              marginBottom: 18,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: SPOT,
+              fontWeight: 700,
+              textDecoration: "none",
+              border: `1.5px solid ${SPOT}`,
+              padding: "11px 18px",
+            }}
+          >
+            ← Back to {cameFrom.name}
+          </a>
+        )}
         {sheet && <Sheet sheet={sheet} />}
         <p
           style={{
