@@ -1120,9 +1120,9 @@ async function run(override) {
             }}
           >
             <span style={{ display: "flex", gap: 4 }}>
-              <Dot fill={HEAT} on />
+              <Dot fill={TEXT} on />
               <Dot fill={SPOT} on />
-              <Dot fill={INK} on />
+              <Dot fill={HEAT} on />
             </span>
             <span>Third listen</span>
           </div>
@@ -1135,7 +1135,8 @@ async function run(override) {
               letterSpacing: "-0.03em",
             }}
           >
-            THE <span style={{ color: HEAT }}>THIRD</span> LISTEN
+            THE <span style={{ color: SPOT }}>THIRD</span>{" "}
+            <span style={{ color: HEAT }}>LISTEN</span>
           </h1>
           <div
             style={{
@@ -1418,7 +1419,13 @@ async function run(override) {
                 return (
                   <div key={i} style={{ borderBottom: `1px solid ${RULE}` }}>
                     <button
-                      onClick={() => toggleArtist(m.name, m.mbid)}
+                      onClick={() => {
+                        const slug = m.name
+                          .toLowerCase()
+                          .replace(/[^a-z0-9]+/g, "-")
+                          .replace(/^-|-$/g, "");
+                        window.location.href = `/artist/${slug}`;
+                      }}
                       style={{
                         display: "flex",
                         width: "100%",
