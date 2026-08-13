@@ -8,7 +8,6 @@ const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Spectral:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;700&display=swap');
 `;
 
-const INK = "#0E0F13";
 const PAPER = "#15171C";
 const PAPER_DEEP = "#1D2027";
 const TEXT = "#E4E0D6";
@@ -17,11 +16,13 @@ const SPOT = "#5FB0BE";
 const HEAT = "#E4593C";
 const RULE = "#2E323B";
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export default function ArtistPage() {
   const params = useParams();
   const slug = decodeURIComponent(params.slug || "");
 
-  const [name, setName] = useState("");
+  const [info, setInfo] = useState(null);
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -33,23 +34,32 @@ export default function ArtistPage() {
     let cancelled = false;
     const query = slug.replace(/-/g, " ");
 
-    fetch(`/api/mb?q=${encodeURIComponent(query)}&type=artist`)
-      .then((r) => r.json())
-      .then((d) => {
-        const list = d.artists || [];
+    (async () => {
+      try {
+        const search = await fetch(
+          `/api/mb?q=${encodeURIComponent(query)}&type=artist`
+        ).then((r) => r.json());
+
+        const list = search.artists || [];
         const exact = list.find(
           (a) => a.name.toLowerCase() === query.toLowerCase()
         );
         const match = exact || list[0];
         if (!match) throw new Error("no artist");
-        if (!cancelled) setName(match.name);
-        return new Promise((r) => setTimeout(r, 1200)).then(() =>
-          fetch(`/api/mb-albums?mbid=${match.id}`).then((r) => r.json())
+
+        await wait(1200);
+        const detail = await fetch(`/api/mb-artist?mbid=${match.id}`).then((r) =>
+          r.json()
         );
-      })
-      .then((d) => {
+        if (!cancelled) setInfo(detail);
+
+        await wait(1200);
+        const groups = await fetch(`/api/mb-albums?mbid=${match.id}`).then((r) =>
+          r.json()
+        );
         if (cancelled) return;
-        const list = (d["release-groups"] || [])
+
+        const studio = (groups["release-groups"] || [])
           .filter(
             (g) =>
               g["primary-type"] === "Album" &&
@@ -62,28 +72,62 @@ export default function ArtistPage() {
               : "",
           }))
           .sort((a, b) => (a.year || "9999").localeCompare(b.year || "9999"));
-        setAlbums(list);
+
+        setAlbums(studio);
         setLoading(false);
-      })
-      .catch(() => {
+      } catch (e) {
         if (!cancelled) {
           setNotFound(true);
           setLoading(false);
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
   }, [slug]);
 
-  const displayName = name || slug.replace(/-/g, " ");
-  const span = extra && extra.span ? extra.span : null;
+  const displayName = (info && info.name) || slug.replace(/-/g, " ");
+  const thisYear = new Date().getFullYear();
+
+  // where they're from — prefer the specific city over the country
+  const from =
+    (extra && extra.formed) ||
+    (info && (info.beginArea || info.area)) ||
+    "";
+
+  // active years
+  const active =
+    (extra && extra.years) ||
+    (info && info.beganYear
+      ? `${info.beganYear} – ${info.endedYear || "present"}`
+      : "");
+
+  // members: hand-written wins, otherwise MusicBrainz
+  const members =
+    extra && extra.members && extra.members.length > 0
+      ? extra.members
+      : (info && info.members) || [];
+
+  // work out the timeline span from whatever data we have
+  const years = members.flatMap((m) => [m.from, m.to]).filter(Boolean);
+  const spanStart =
+    (extra && extra.span && extra.span.start) ||
+    (info && info.beganYear) ||
+    (years.length ? Math.min(...years) : null);
+  const spanEnd =
+    (extra && extra.span && extra.span.end) ||
+    (info && info.endedYear) ||
+    (years.length ? Math.max(...years, thisYear) : null);
+
+  const canChart =
+    spanStart && spanEnd && spanEnd > spanStart && members.length > 0;
 
   return (
     <div style={{ background: PAPER, minHeight: "100vh", color: TEXT }}>
       <style>{FONTS}</style>
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "40px 24px 140px" }}>
+      <div style={{ maxWidth: 940, margin: "0 auto", padding: "40px 24px 140px" }}>
         <a
           href="/"
           style={{
@@ -95,7 +139,7 @@ export default function ArtistPage() {
             textDecoration: "none",
           }}
         >
-          ← The Third Listen
+          ← Search
         </a>
 
         <div
@@ -116,6 +160,21 @@ export default function ArtistPage() {
           >
             {displayName.toUpperCase()}
           </h1>
+
+          {info && info.disambiguation && (
+            <div
+              style={{
+                fontFamily: "'Spectral', Georgia, serif",
+                fontStyle: "italic",
+                fontSize: 15,
+                color: MUTED,
+                marginTop: 8,
+              }}
+            >
+              {info.disambiguation}
+            </div>
+          )}
+
           <div
             style={{
               display: "flex",
@@ -128,20 +187,42 @@ export default function ArtistPage() {
               letterSpacing: "0.06em",
             }}
           >
-            {extra && extra.formed && (
+            {from && (
               <span>
-                FORMED <span style={{ color: TEXT }}>{extra.formed}</span>
+                {info && info.type === "Person" ? "FROM" : "FORMED"}{" "}
+                <span style={{ color: TEXT }}>{from}</span>
               </span>
             )}
-            {extra && extra.years && (
+            {active && (
               <span>
-                ACTIVE <span style={{ color: TEXT }}>{extra.years}</span>
+                ACTIVE <span style={{ color: TEXT }}>{active}</span>
               </span>
             )}
             <span>
               ALBUMS <span style={{ color: TEXT }}>{albums.length || "—"}</span>
             </span>
           </div>
+
+          {info && info.genres && info.genres.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+              {info.genres.map((g, i) => (
+                <span
+                  key={i}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 10,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    color: SPOT,
+                    border: `1px solid ${RULE}`,
+                    padding: "4px 9px",
+                  }}
+                >
+                  {g}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {extra && extra.hallOfFame && extra.hallOfFame.inducted && (
@@ -176,28 +257,48 @@ export default function ArtistPage() {
               >
                 THIRD LISTEN HALL OF FAME
               </div>
-              <div
-                style={{
-                  fontFamily: "'Spectral', Georgia, serif",
-                  fontSize: 14,
-                  color: MUTED,
-                  marginTop: 4,
-                }}
-              >
-                Inducted {extra.hallOfFame.year}
-              </div>
+              {extra.hallOfFame.year && (
+                <div
+                  style={{
+                    fontFamily: "'Spectral', Georgia, serif",
+                    fontSize: 14,
+                    color: MUTED,
+                    marginTop: 4,
+                  }}
+                >
+                  Inducted {extra.hallOfFame.year}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {extra && extra.members && extra.members.length > 0 && span && (
+        {members.length > 0 && (
           <>
             <SectionTitle>Members</SectionTitle>
-            <div style={{ marginTop: 4 }}>
-              {extra.members.map((m, i) => {
-                const total = span.end - span.start || 1;
-                const left = ((m.from - span.start) / total) * 100;
-                const width = ((m.to - m.from) / total) * 100;
+            {canChart && (
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 10,
+                  color: MUTED,
+                  padding: "8px 0 2px",
+                  marginLeft: 224,
+                }}
+              >
+                <span>{spanStart}</span>
+                <span>{spanEnd}</span>
+              </div>
+            )}
+            <div>
+              {members.map((m, i) => {
+                const from = m.from || spanStart;
+                const to = m.to || (m.current ? spanEnd : spanEnd);
+                const total = canChart ? spanEnd - spanStart : 1;
+                const left = canChart ? ((from - spanStart) / total) * 100 : 0;
+                const width = canChart ? ((to - from) / total) * 100 : 0;
                 return (
                   <div
                     key={i}
@@ -219,45 +320,49 @@ export default function ArtistPage() {
                       >
                         {m.name}
                       </div>
+                      {m.role && (
+                        <div
+                          style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 10.5,
+                            color: MUTED,
+                          }}
+                        >
+                          {m.role}
+                        </div>
+                      )}
+                    </div>
+                    {canChart && (
                       <div
                         style={{
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: 10.5,
-                          color: MUTED,
+                          flex: 1,
+                          position: "relative",
+                          height: 10,
+                          background: PAPER_DEEP,
                         }}
                       >
-                        {m.role}
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: `${Math.max(left, 0)}%`,
+                            width: `${Math.max(width, 2)}%`,
+                            top: 0,
+                            bottom: 0,
+                            background: m.current ? SPOT : MUTED,
+                          }}
+                        />
                       </div>
-                    </div>
+                    )}
                     <div
                       style={{
-                        flex: 1,
-                        position: "relative",
-                        height: 10,
-                        background: PAPER_DEEP,
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: `${left}%`,
-                          width: `${Math.max(width, 2)}%`,
-                          top: 0,
-                          bottom: 0,
-                          background: SPOT,
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        flex: "0 0 92px",
+                        flex: "0 0 104px",
                         textAlign: "right",
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 11,
                         color: MUTED,
                       }}
                     >
-                      {m.from}–{m.to}
+                      {m.from || "?"}–{m.to || (m.current ? "present" : "?")}
                     </div>
                   </div>
                 );
@@ -276,7 +381,7 @@ export default function ArtistPage() {
               padding: "12px 0",
             }}
           >
-            Loading discography...
+            Loading...
           </div>
         )}
         {notFound && (
@@ -295,9 +400,11 @@ export default function ArtistPage() {
           {albums.map((a, i) => (
             <a
               key={i}
-             href={`/?album=${encodeURIComponent(
+              href={`/?album=${encodeURIComponent(
                 `${a.title}, ${displayName}`
-              )}&from=${encodeURIComponent(slug)}&name=${encodeURIComponent(displayName)}`}
+              )}&from=${encodeURIComponent(slug)}&name=${encodeURIComponent(
+                displayName
+              )}`}
               style={{
                 display: "flex",
                 alignItems: "baseline",

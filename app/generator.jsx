@@ -612,7 +612,7 @@ function splitPersonnel(tracks) {
         .sort((a, b) => b[1].size - a[1].size)
         .map(([role]) => role);
 
-      const shown = sortRoles(kept);
+      const shown = kept;
       core.push({
         name,
         role: shown.join(", "),
@@ -622,7 +622,7 @@ function splitPersonnel(tracks) {
     } else {
       // additional: every role, each with the track numbers it appears on
       const detail = roleList
-        .sort((a, b) => rankRole(a[0]) - rankRole(b[0]))
+        .sort((a, b) => b[1].size - a[1].size)
         .map(([role, set]) => {
           const nums = [...set].map((i) => tracks[i].number ?? i + 1).sort((a, b) => a - b);
           return `${role} [${nums.join(", ")}]`;
@@ -637,8 +637,8 @@ function splitPersonnel(tracks) {
     }
   });
 
-  core.sort((a, b) => a.rank - b.rank || b.count - a.count || a.name.localeCompare(b.name));
-  additional.sort((a, b) => a.rank - b.rank || b.count - a.count || a.name.localeCompare(b.name));
+  core.sort((a, b) => b.count - a.count || a.rank - b.rank || a.name.localeCompare(b.name));
+  additional.sort((a, b) => b.count - a.count || a.rank - b.rank || a.name.localeCompare(b.name));
   return { core, additional, total };
 }
 
