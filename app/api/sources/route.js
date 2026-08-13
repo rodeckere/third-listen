@@ -15,15 +15,25 @@ async function wikipediaSearch(query) {
 }
 
 async function wikipediaPage(title) {
+  // The plain-text extract drops bulleted lists, which is exactly where
+  // personnel usually live. Fetch the raw wikitext instead.
   const url =
-    "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1" +
-    `&format=json&origin=*&titles=${encodeURIComponent(title)}`;
+    "https://en.wikipedia.org/w/api.php?action=parse&prop=wikitext" +
+    `&format=json&origin=*&page=${encodeURIComponent(title)}`;
   const res = await fetch(url, { headers: { "User-Agent": UA } });
   if (!res.ok) return "";
   const data = await res.json();
-  const pages = (data.query && data.query.pages) || {};
-  const first = Object.values(pages)[0];
-  return (first && first.extract) || "";
+  const raw =
+    (data.parse && data.parse.wikitext && data.parse.wikitext["*"]) || "";
+
+  return raw
+    .replace(/\{\{[^{}]*\}\}/g, " ")
+    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
+    .replace(/'''?/g, "")
+    .replace(/<ref[\s\S]*?<\/ref>/gi, "")
+    .replace(/<ref[^>]*\/>/gi, "")
+    .replace(/^\*\s*/gm, "")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 // Pull just the sections that carry credits, so we don't ship the whole article.
@@ -79,8 +89,22 @@ async function discogsCredits(album, artist) {
   );
   if (!search.ok) return { text: "", note: `search ${search.status}` };
 
-  const found = await search.json();
-  const first = (found.results || [])[0];
+  let found = await search.json();
+  let first = (found.results || [])[0];
+
+  // Artist names don't always match — P!nk vs Pink. Retry on title alone.
+  if (!first) {
+    const retry = await fetch(
+      `https://api.discogs.com/database/search?type=release&q=${encodeURIComponent(
+        album + " " + artist.replace(/[^a-zA-Z0-9 ]/g, "")
+      )}&per_page=5`,
+      { headers }
+    );
+    if (retry.ok) {
+      found = await retry.json();
+      first = (found.results || [])[0];
+    }
+  }
   if (!first) return { text: "", note: "no release found" };
 
   const rel = await fetch(`https://api.discogs.com/releases/${first.id}`, {
