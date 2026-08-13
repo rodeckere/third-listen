@@ -142,7 +142,7 @@ Return ONLY valid JSON, compact, no commentary.
 Shape:
 {
 
-"lineup": [{ "name": string, "roles": [string] }],
+"lineup": [{ "name": string, "roles": [string], "albumRoles": [string] }],
 "tracks": [{ "number": number, "title": string, "lyricsBy": [string], "musicBy": [string], "except": [{ "name": string, "roles": [string] }] }] [{ "name": string, "roles": [string] }] }]}
 
 "lineup" holds only what is TRUE OF EVERY TRACK. A role belongs there only if that person
@@ -154,10 +154,19 @@ unchanging roles — or give them an empty roles array and specify each track.
   - a lineup member playing a different set there -> name and THAT TRACK'S FULL SET of
     roles (this replaces their lineup roles for that track)
   - a lineup member absent there -> name with "roles": []
-COPY THE INSTRUMENT LIST EXACTLY. When published credits give someone a list of
-instruments, carry every one of them through. If the credits say "harmony vocals, mandolin,
-bass guitar", all three appear — do not silently drop one because it seems unlikely or
-because someone else already covers it.
+TWO KINDS OF CREDIT. Keep them separate.
+
+"albumRoles" — instruments a source credits to someone for the album as a whole, with no
+track breakdown. A multi-instrumentalist credited "harmony vocals, mandolin, bass guitar"
+gets all three here. Never drop one.
+
+"roles" on a track — only what a source puts in their hands on THAT song, plus their
+single primary instrument where they clearly play throughout. If the sources do not break
+the album credit down by track, do NOT spread the full list across every track. Give the
+primary instrument per track and leave the rest in albumRoles.
+
+So Dave Boquist, credited "guitar, banjo, fiddle, lap steel, dobro" for the album, appears
+on each track as "guitar" — and his full list lives in albumRoles.
 COMPLETENESS, WITHIN WHAT IS DOCUMENTED — every instrument you can hear on a track should
 have someone credited for it, but only from the credits themselves. If the sources do not
 say who played it, use an unnamed "Session drummer" style credit or leave it out. Never
@@ -547,12 +556,18 @@ function sortPersonnel(people) {
 
 function expandTracks(sheet) {
   const lineup = sheet.lineup || [];
+  const albumRoles = new Map(
+    lineup.map((p) => [p.name, p.albumRoles || p.roles || []])
+  );
   return (sheet.tracks || []).map((t) => {
     const byName = new Map(lineup.map((p) => [p.name, [...(p.roles || [])]]));
     (t.except || []).forEach((e) => {
       if (!e || !e.name) return;
       if (!e.roles || e.roles.length === 0) byName.delete(e.name);
       else byName.set(e.name, e.roles);
+    });
+    byName.forEach((roles, name) => {
+      if (!roles || roles.length === 0) byName.delete(name);
     });
     return {
       ...t,
@@ -592,7 +607,7 @@ function collapseFamilies(roleList, threshold, kept) {
   return out;
 }
 
-function splitPersonnel(tracks) {
+function splitPersonnel(tracks, albumRoleMap = new Map()) {
   const total = tracks.length;
   if (!total) return { core: [], additional: [] };
   const threshold = total / 2;
@@ -627,7 +642,12 @@ function splitPersonnel(tracks) {
         .sort((a, b) => b[1].size - a[1].size)
         .map(([role]) => role);
 
-      const shown = kept;
+      const extra = albumRoleMap.get(name) || [];
+      const merged = [...kept];
+      extra.forEach((r) => {
+        if (!merged.includes(r)) merged.push(r);
+      });
+      const shown = merged;
       core.push({
         name,
         role: shown.join(", "),
@@ -856,7 +876,10 @@ let details = null;
 
       if (myToken !== buildToken.current) return;
       const tracks = expandTracks(merged);
-      const { core, additional } = splitPersonnel(tracks);
+      const { core, additional } = splitPersonnel(
+        tracks,
+        new Map((personnel.lineup || []).map((p) => [p.name, p.albumRoles || []]))
+      );
 const PARTICLES = /^(van|von|de|del|della|di|da|dos|du|la|le|el|st\.?|mac|mc|o'|ter|ten|af|av|bin|ibn)$/i;
       const lastName = (n) => {
         const parts = String(n).trim().split(/\s+/);
