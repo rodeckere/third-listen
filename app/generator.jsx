@@ -154,7 +154,10 @@ unchanging roles — or give them an empty roles array and specify each track.
   - a lineup member playing a different set there -> name and THAT TRACK'S FULL SET of
     roles (this replaces their lineup roles for that track)
   - a lineup member absent there -> name with "roles": []
-
+COPY THE INSTRUMENT LIST EXACTLY. When published credits give someone a list of
+instruments, carry every one of them through. If the credits say "harmony vocals, mandolin,
+bass guitar", all three appear — do not silently drop one because it seems unlikely or
+because someone else already covers it.
 COMPLETENESS, WITHIN WHAT IS DOCUMENTED — every instrument you can hear on a track should
 have someone credited for it, but only from the credits themselves. If the sources do not
 say who played it, use an unnamed "Session drummer" style credit or leave it out. Never
@@ -241,6 +244,18 @@ WRITERS AND SINGERS ARE PER TRACK. On albums where different members write and s
 different songs (The Beatles, Fleetwood Mac, The Band, Wilco), assign the lyrics credit and
 the lead vocal to the correct person for each individual song, never to one default person
 for the album.
+QUALIFIERS ARE INFORMATION. When a source hedges — "on some songs", "most all harmonica
+parts", "additional guitar", "various tracks" — that hedge is the source telling you the
+track breakdown is NOT documented. Never convert a hedge into specific track numbers.
+
+For a musician credited with a hedge, put them in the lineup with their instrument and no
+track numbers at all. It is correct to show them on every track, or to show them with the
+instrument and let the reader know it varies. It is NOT correct to pick a set of track
+numbers that no source states. Inventing "[1, 4, 6, 9, 11, 14]" from "on some songs" is
+fabrication, and it is worse than the vagueness it replaces.
+
+Only assign track numbers when a source names the track: "drums on Live Free", "accordion
+on Too Early", or a per-track credit list.
 ACCURACY — THE OVERRIDING RULE. Never invent anything. Not a name, not an instrument, not
 a detail. If a source does not state it, it does not go in the sheet. An incomplete sheet
 is correct; a filled-in one that guesses is not.
@@ -782,12 +797,29 @@ let details = null;
     }
 
     try {
+      let sourceBlock = "";
+      try {
+        const src = await fetch(
+          `/api/sources?album=${encodeURIComponent(
+            details.album || title
+          )}&artist=${encodeURIComponent(details.artist || "")}`
+        ).then((r) => r.json());
+        if (src.sources && src.sources.length) {
+          sourceBlock =
+            "\n\nPUBLISHED CREDITS — use these as your primary source:\n\n" +
+            src.sources
+              .map((s) => `--- ${s.source} ---\n${s.text}`)
+              .join("\n\n");
+        }
+      } catch (e) {
+        /* fall back to search */
+      }
       const trackList = (details.tracks || [])
         .map((t) => `${t.number}. ${t.title}`)
         .join("\n");
 
       const personnel = await ask(
-        `${PERSONNEL_PROMPT}\n\nAlbum: ${title}\n\nThese are the tracks, in this exact order. Use these numbers and titles verbatim:\n${trackList}`,
+        `${PERSONNEL_PROMPT}\n\nAlbum: ${title}\n\nThese are the tracks, in this exact order. Use these numbers and titles verbatim:\n${trackList}${sourceBlock}`,
         8000,
         true
       );
@@ -1067,7 +1099,7 @@ async function run(override) {
         `/api/mb?q=${encodeURIComponent(value)}&type=artist`
       ).then((r) => r.json());
 
-      await new Promise((r) => setTimeout(r, 1100));
+      await new Promise((r) => setTimeout(r, 1600));
 
       const albumRes = await fetch(
         `/api/mb?q=${encodeURIComponent(value)}&type=release-group`

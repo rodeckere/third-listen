@@ -63,31 +63,61 @@ function stripHtml(html) {
 }
 
 async function discogsCredits(album, artist) {
-  try {
-    // find the release via DuckDuckGo's HTML endpoint — no key required
-    const q = `site:discogs.com release ${artist} ${album}`;
-    const res = await fetch(
-      `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
-      { headers: { "User-Agent": UA } }
-    );
-    if (!res.ok) return "";
-    const html = await res.text();
-    const match = html.match(
-      /https:\/\/www\.discogs\.com\/release\/\d+[^"&\s]*/
-    );
-    if (!match) return "";
+  const token = process.env.DISCOGS_TOKEN;
+  if (!token) return { text: "", note: "no token" };
 
-    const page = await fetch(match[0], { headers: { "User-Agent": UA } });
-    if (!page.ok) return "";
-    const body = await page.text();
+  const headers = {
+    "User-Agent": UA,
+    Authorization: `Discogs token=${token}`,
+  };
 
-    // the credits block sits between these markers on a release page
-    const start = body.search(/Credits/i);
-    if (start === -1) return "";
-    return stripHtml(body.slice(start, start + 14000)).slice(0, 6000);
-  } catch (e) {
-    return "";
+  const search = await fetch(
+    `https://api.discogs.com/database/search?type=release&release_title=${encodeURIComponent(
+      album
+    )}&artist=${encodeURIComponent(artist)}&per_page=5`,
+    { headers }
+  );
+  if (!search.ok) return { text: "", note: `search ${search.status}` };
+
+  const found = await search.json();
+  const first = (found.results || [])[0];
+  if (!first) return { text: "", note: "no release found" };
+
+  const rel = await fetch(`https://api.discogs.com/releases/${first.id}`, {
+    headers,
+  });
+  if (!rel.ok) return { text: "", note: `release ${rel.status}` };
+
+  const data = await rel.json();
+
+  const lines = [];
+  lines.push(`Release: ${data.title} (${data.year || "?"})`);
+  if (data.labels) {
+    lines.push(`Label: ${data.labels.map((l) => l.name).join(", ")}`);
   }
+
+  if (data.extraartists && data.extraartists.length) {
+    lines.push("", "ALBUM CREDITS:");
+    data.extraartists.forEach((a) => {
+      lines.push(`${a.name} - ${a.role}`);
+    });
+  }
+
+  if (data.tracklist && data.tracklist.length) {
+    lines.push("", "TRACKLIST:");
+    data.tracklist.forEach((t) => {
+      const credits = (t.extraartists || [])
+        .map((a) => `${a.name} (${a.role})`)
+        .join(", ");
+      lines.push(
+        `${t.position}. ${t.title}${credits ? " — " + credits : ""}`
+      );
+    });
+  }
+
+  if (data.notes) lines.push("", "NOTES:", data.notes);
+
+  return { text: lines.join("\n").slice(0, 8000), note: "ok" };
 }
 
 // ---------- route ----------
@@ -121,8 +151,11 @@ export async function GET(request) {
 
   try {
     const dc = await discogsCredits(album, artist);
-    debug.discogsLength = dc.length;
-    if (dc) sources.push({ source: "Discogs release credits", text: dc });
+    debug.discogs = dc.note;
+    debug.discogsLength = dc.text.length;
+    if (dc.text) {
+      sources.push({ source: "Discogs release credits", text: dc.text });
+    }
   } catch (e) {
     debug.discogsError = e.message;
   }

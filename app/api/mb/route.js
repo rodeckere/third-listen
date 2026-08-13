@@ -14,15 +14,21 @@ export async function GET(request) {
       ? `https://musicbrainz.org/ws/2/artist?query=${encodeURIComponent(q)}&fmt=json&limit=8`
       : `https://musicbrainz.org/ws/2/release-group?query=${encodeURIComponent(q)}&fmt=json&limit=8`;
 
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "TheThirdListen/0.1 ( ericrodecker887@gmail.com )",
-    },
-  });
+  const headers = {
+    "User-Agent": "TheThirdListen/0.1 ( ericrodecker887@gmail.com )",
+  };
 
-  if (!res.ok) {
-    return Response.json({ error: `musicbrainz ${res.status}` }, { status: 502 });
+  // MusicBrainz allows about one request a second — back off and retry
+  let res;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await fetch(url, { headers });
+    if (res.ok) return Response.json(await res.json());
+    if (res.status !== 503 && res.status !== 429) break;
+    await new Promise((r) => setTimeout(r, 900 * (attempt + 1)));
   }
 
-  return Response.json(await res.json());
+  return Response.json(
+    { error: `musicbrainz ${res ? res.status : "unknown"}` },
+    { status: 502 }
+  );
 }
