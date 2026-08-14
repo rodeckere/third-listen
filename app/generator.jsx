@@ -125,9 +125,11 @@ List every track in running order.
 
 const PERSONNEL_PROMPT = `You are a music documentarian. Give the personnel for one album.
 
-SEARCH THE WEB FIRST, but keep it brief — two or three searches at most, then write the
-JSON. Look for the album's published credits and, where they exist, the per-track session
-personnel: Wikipedia, Discogs, AllMusic, official label or artist sites, box-set and reissue liner
+SEARCH THE WEB THOROUGHLY before writing the JSON. Run separate searches for the album's
+published credits AND for individual songs by name — per-track credits, when they exist, are
+usually found on a song's own page rather than the album's. Use as many searches as the album
+needs; six to ten is normal. Look at: Wikipedia, Discogs, AllMusic, official label or artist
+sites, box-set and reissue liner
 notes, AFM session sheets, and established sessionography sites.
 
 IGNORE unreliable sources: fan wikis, lyrics sites, forum posts, blog aggregators,
@@ -143,7 +145,7 @@ Shape:
 {
 
 "lineup": [{ "name": string, "roles": [string], "albumRoles": [string] }],
-"tracks": [{ "number": number, "title": string, "lyricsBy": [string], "musicBy": [string], "except": [{ "name": string, "roles": [string] }] }] [{ "name": string, "roles": [string] }] }]}
+"tracks": [{ "number": number, "title": string, "lyricsBy": [string], "musicBy": [string], "perTrackDocumented": boolean, "instrumental": boolean, "except": [{ "name": string, "roles": [string] }] }]}
 
 "lineup" holds only what is TRUE OF EVERY TRACK. A role belongs there only if that person
 plays it on all of them. If someone's instruments change track to track, list only their
@@ -167,11 +169,10 @@ primary instrument per track and leave the rest in albumRoles.
 
 So Dave Boquist, credited "guitar, banjo, fiddle, lap steel, dobro" for the album, appears
 on each track as "guitar" — and his full list lives in albumRoles.
-COMPLETENESS, WITHIN WHAT IS DOCUMENTED — every instrument you can hear on a track should
-have someone credited for it, but only from the credits themselves. If the sources do not
-say who played it, use an unnamed "Session drummer" style credit or leave it out. Never
-close the gap by guessing a name. If a track has drums, somebody is credited with drums on it. Same for bass,
-guitar, keyboards, horns, strings. Never leave an audible instrument unattributed.
+DOCUMENTED ONLY — report what the sources say and stop there. Never credit an instrument
+because you can hear it, because the person plays it elsewhere on the album, or because the
+track would look empty otherwise. A track with one credit is correct if one credit is what the
+sources give. Never copy the album-level lineup down into a track to fill it out.
 
 ONLY WHAT THEY PLAYED ON THAT SONG. A multi-instrumentalist's album credit is the sum of
 everything they played across the record, not what they played on any one track. Someone
@@ -185,6 +186,13 @@ show drums, and a song with no fiddle must not show fiddle.
 
 If you genuinely do not know whether someone played on a track at all, leave them off that
 track rather than assuming.
+
+"perTrackDocumented" is false when the sources credit this album only at album level, with no
+song-by-song breakdown. Most albums are like this — album-level liner notes are the norm and
+per-track session data is the exception. Do not set it true because the album is famous or well
+covered; set it true only when you actually found per-track credits.
+
+"instrumental" is true on a track with no vocals. Still list any players the sources name for it.
 
 CONSISTENCY, CAREFULLY — do not silently drop a player from tracks they did play. But do
 NOT solve that by applying one uniform roster to the whole album. Session rosters changed
@@ -637,12 +645,15 @@ function splitPersonnel(tracks, albumRoleMap = new Map()) {
     const roleList = [...entry.roles.entries()];
 
     if (count >= threshold) {
-      // core: keep only the roles that themselves clear 50% of all tracks
+      // core: person clears 50% of tracks, then show every role they played
       const kept = roleList
         .sort((a, b) => b[1].size - a[1].size)
         .map(([role]) => role);
 
-      const extra = albumRoleMap.get(name) || [];
+      // album-level roles only count if the per-track data backs them up
+      const extra = (albumRoleMap.get(name) || []).filter((r) =>
+        entry.roles.has(String(r).trim())
+      );
       const merged = [...kept];
       extra.forEach((r) => {
         if (!merged.includes(r)) merged.push(r);
@@ -834,13 +845,15 @@ let details = null;
       } catch (e) {
         /* fall back to search */
       }
+      const trackCount = (details.tracks || []).length;
       const trackList = (details.tracks || [])
         .map((t) => `${t.number}. ${t.title}`)
         .join("\n");
+      const personnelBudget = Math.min(32000, 3000 + trackCount * 800);
 
       const personnel = await ask(
         `${PERSONNEL_PROMPT}\n\nAlbum: ${title}\n\nThese are the tracks, in this exact order. Use these numbers and titles verbatim:\n${trackList}${sourceBlock}`,
-        8000,
+        personnelBudget,
         true
       );
 
@@ -871,6 +884,15 @@ let details = null;
             byTitle.get(String(t.title || "").toLowerCase().trim()) ||
             byNumber.get(t.number) ||
             [],
+          perTrackDocumented: (() => {
+            const pt =
+              (personnel.tracks || []).find(
+                (p) =>
+                  String(p.title || "").toLowerCase().trim() ===
+                  String(t.title || "").toLowerCase().trim()
+              ) || {};
+            return pt.perTrackDocumented !== false;
+          })(),
         })),
       };
 
@@ -2177,9 +2199,12 @@ function Sheet({ sheet }) {
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 11,
                         color: MUTED,
+                        lineHeight: 1.6,
                       }}
                     >
-                      personnel loading...
+                      {sheet._partial
+                        ? "personnel loading..."
+                        : "no per-track personnel documented — see core personnel above"}
                     </div>
                   );
                 }
